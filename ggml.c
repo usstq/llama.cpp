@@ -33,6 +33,8 @@
 #include <unistd.h>
 #endif
 
+#include "profiler.h"
+
 #ifdef __ARM_FEATURE_MATMUL_INT8
 #undef GGML_USE_LLAMAFILE
 #endif
@@ -18417,7 +18419,9 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
 
         if (state->ith < n_tasks) {
             params.type = GGML_TASK_TYPE_COMPUTE;
+            void * pv = startProfile(state->ith, node->name, "");
             ggml_compute_forward(&params, node);
+            stopProfile(pv);
         }
 
         if (atomic_fetch_sub(&state->shared->n_active, 1) == 1) {
@@ -18652,6 +18656,9 @@ enum ggml_status ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cpl
     };
     struct ggml_compute_state * workers = alloca(sizeof(struct ggml_compute_state)*n_threads);
 
+    createProfilers(n_threads);
+
+    void * profv = startProfile(0, "ggml_graph_compute", "ggml_graph_compute");
     // create thread pool
     if (n_threads > 1) {
         for (int j = 1; j < n_threads; ++j) {
@@ -18678,6 +18685,8 @@ enum ggml_status ggml_graph_compute(struct ggml_cgraph * cgraph, struct ggml_cpl
     // this is a work thread too
     ggml_graph_compute_thread(&workers[0]);
     enum ggml_status compute_status = workers[0].ec;
+
+    stopProfile(profv);
 
     // don't leave affinity set on the main thread
     clear_numa_thread_affinity();
